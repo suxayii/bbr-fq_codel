@@ -9,6 +9,12 @@
 适用于 Debian/Ubuntu、CentOS 等常见 Linux 发行版。  
 
 ---
+## ⚡ 快速开始
+
+### 1️⃣ 下载脚本
+
+```bash
+bash <(curl -Ls https://raw.githubusercontent.com/yourusername/bbr-optimizer/main/bbr.sh)
 
 ## ✨ 功能亮点
 
@@ -28,11 +34,3 @@
 - root 权限（或使用 `sudo` 执行脚本）  
 
 ---
-
-## ⚡ 快速开始
-
-### 1️⃣ 下载脚本
-
-```bash
-wget https://github.com/yourusername/bbr-optimizer/raw/main/bbr.sh
-chmod +x bbr.sh
