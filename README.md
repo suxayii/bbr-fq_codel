@@ -8,13 +8,12 @@
 
 适用于 Debian/Ubuntu、CentOS 等常见 Linux 发行版。  
 
----
-## ⚡ 快速开始
-
-### 1️⃣ 下载脚本
+### ⚡ 快速开始
 
 ```bash
 bash <(curl -Ls https://raw.githubusercontent.com/yourusername/bbr-optimizer/main/bbr.sh)
+
+---
 
 ## ✨ 功能亮点
 
