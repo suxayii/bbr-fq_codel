@@ -17,23 +17,16 @@
 
 ## 使用方法
 
-1. 下载脚本：
+快速开启bbr+fq_codel：
 ```bash
-wget https://raw.githubusercontent.com/suxayii/bbr-fq_codel/main/bbr.sh
-chmod +x bbr.sh
+wget https://raw.githubusercontent.com/suxayii/bbr-fq_codel/main/bbr.sh && chmod +x bbr.sh && ./bbr.sh fq_codel
 ```
 
-2. 执行脚本：
-
-默认使用 FQ 队列调度器：
+快速开启bbr+fq：
 ```bash
-./bbr.sh
+wget https://raw.githubusercontent.com/suxayii/bbr-fq_codel/main/bbr.sh && chmod +x bbr.sh && ./bbr.sh
 ```
 
-使用 FQ_CoDel 队列调度器：
-```bash
-./bbr.sh fq_codel
-```
 
 ## 脚本功能详解
 
