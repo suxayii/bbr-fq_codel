@@ -48,13 +48,29 @@ backup_config() {
     echo "✅ 配置已备份到: $backup_dir"
 }
 
+# 写入 sysctl 配置并立即生效
+add_sysctl_param() {
+    local key="$1"
+    local value="$2"
+
+    # 如果 /etc/sysctl.conf 已存在此参数，替换掉
+    if grep -q "^$key" /etc/sysctl.conf 2>/dev/null; then
+        sed -i "s|^$key.*|$key = $value|" /etc/sysctl.conf
+    else
+        echo "$key = $value" >> /etc/sysctl.conf
+    fi
+
+    # 立即生效
+    sysctl -w "$key=$value" >/dev/null
+}
+
 # 系统兼容性检查
 check_system_compatibility() {
     # 检查是否为root用户
     if [[ $EUID -ne 0 ]]; then
         echo "❌ 必须以root用户运行此脚本"
         exit 1
-    }
+    fi
 
     # 检查系统类型
     if ! command -v lsb_release >/dev/null 2>&1; then
@@ -65,11 +81,11 @@ check_system_compatibility() {
         fi
     fi
 
-    local os_type=$(lsb_release -si 2>/dev/null || echo "Unknown")
-    local os_version=$(lsb_release -sr 2>/dev/null || echo "Unknown")
-    
+    local os_type=$(lsb_release -si 2>/dev/null || cat /etc/*release | grep '^ID=' | cut -d= -f2 || echo "Unknown")
+    local os_version=$(lsb_release -sr 2>/dev/null || cat /etc/*release | grep '^VERSION_ID=' | cut -d= -f2 || echo "Unknown")
+
     echo "检测到的系统: $os_type $os_version"
-    
+
     # 检查必需工具
     local required_tools=("bc" "curl" "ip" "awk" "sed" "grep")
     for tool in "${required_tools[@]}"; do
@@ -131,34 +147,33 @@ if [[ $BACKUP -eq 1 ]]; then
     backup_config
 fi
 
-# 显示系统信息（美化输出）
+# 显示系统信息
 echo -e "\n📊 ==== 系统与网络信息 ===="
 printf "%-20s: %s\n" "CPU型号" "$(lscpu | grep 'Model name' | awk -F ':' '{print $2}' | sed 's/^[ \t]*//')"
 printf "%-20s: %s\n" "内核版本" "$(uname -r)"
 printf "%-20s: %s\n" "操作系统" "$(source /etc/os-release && echo "$PRETTY_NAME")"
 printf "%-20s: %s\n" "公网IP" "$(curl -s --max-time 5 https://ipinfo.io/ip || echo '获取失败')"
 
-# 网络参数优化（更全面的配置）
+# 网络参数优化
 declare -A SYSCTL_PARAMS=(
-    ["net.core.rmem_max"]="16777216"              # 增大接收缓冲区最大值
-    ["net.core.wmem_max"]="16777216"              # 增大发送缓冲区最大值
-    ["net.core.netdev_max_backlog"]="16384"       # 网卡数据包队列长度
-    ["net.core.somaxconn"]="8192"                 # TCP连接队列长度
-    ["net.ipv4.tcp_rmem"]="4096 87380 16777216"   # TCP接收缓冲区
-    ["net.ipv4.tcp_wmem"]="4096 65536 16777216"   # TCP发送缓冲区
-    ["net.ipv4.tcp_fin_timeout"]="10"             # FIN超时时间
-    ["net.ipv4.tcp_tw_reuse"]="1"                 # 启用timewait复用
-    ["net.ipv4.tcp_max_syn_backlog"]="8192"       # SYN队列长度
-    ["net.ipv4.tcp_max_tw_buckets"]="5000"        # timewait最大数量
-    ["net.ipv4.tcp_synack_retries"]="2"           # SYNACK重试次数
-    ["net.ipv4.tcp_syncookies"]="1"               # 启用SYN Cookie
-    ["net.ipv4.tcp_fastopen"]="3"                 # 启用TCP Fast Open
-    ["net.ipv4.tcp_mtu_probing"]="1"              # 启用MTU探测
-    ["net.ipv4.tcp_slow_start_after_idle"]="0"    # 禁用空闲后慢启动
-    ["net.ipv4.ip_local_port_range"]="1024 65535" # 本地端口范围
+    ["net.core.rmem_max"]="16777216"
+    ["net.core.wmem_max"]="16777216"
+    ["net.core.netdev_max_backlog"]="16384"
+    ["net.core.somaxconn"]="8192"
+    ["net.ipv4.tcp_rmem"]="4096 87380 16777216"
+    ["net.ipv4.tcp_wmem"]="4096 65536 16777216"
+    ["net.ipv4.tcp_fin_timeout"]="10"
+    ["net.ipv4.tcp_tw_reuse"]="1"
+    ["net.ipv4.tcp_max_syn_backlog"]="8192"
+    ["net.ipv4.tcp_max_tw_buckets"]="5000"
+    ["net.ipv4.tcp_synack_retries"]="2"
+    ["net.ipv4.tcp_syncookies"]="1"
+    ["net.ipv4.tcp_fastopen"]="3"
+    ["net.ipv4.tcp_mtu_probing"]="1"
+    ["net.ipv4.tcp_slow_start_after_idle"]="0"
+    ["net.ipv4.ip_local_port_range"]="1024 65535"
 )
 
-# 应用网络参数
 echo -e "\n🔧 ==== 应用网络优化参数 ===="
 for param in "${!SYSCTL_PARAMS[@]}"; do
     echo "设置 $param = ${SYSCTL_PARAMS[$param]}"
