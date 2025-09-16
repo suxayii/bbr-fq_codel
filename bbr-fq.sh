@@ -1,6 +1,6 @@
 #!/bin/bash
 # 自动识别系统并启用BBR及网络优化（支持 fq / fq_codel + 可选测速）
-# 增加错误处理、参数验证、系统兼容性检查、配置备份等功能
+# 增加错误处理、参数验证、系统兼容性检查、配置备份和恢复功能
 
 # 严格模式和错误处理
 set -euo pipefail
@@ -32,9 +32,10 @@ show_help() {
 
 选项:
     -q, --qdisc <fq|fq_codel>     设置队列调度器 (默认: fq)
-    -b, --backup                   备份当前网络配置
-    -t, --test-servers "ip1 ip2"   指定测速服务器IP列表
-    -h, --help                     显示此帮助信息
+    -b, --backup                  备份当前网络配置
+    -r, --restore                 从最近的备份恢复配置
+    -t, --test-servers "ip1 ip2"  指定测速服务器IP列表
+    -h, --help                    显示此帮助信息
 EOF
     exit 0
 }
@@ -48,31 +49,47 @@ backup_config() {
     echo "✅ 配置已备份到: $backup_dir"
 }
 
+# 恢复配置函数
+restore_config() {
+    local latest_backup
+    latest_backup=$(ls -td /root/network_backup_* 2>/dev/null | head -n 1)
+
+    if [[ -z "$latest_backup" ]]; then
+        echo "❌ 未找到备份文件，无法恢复"
+        exit 1
+    fi
+
+    if [[ -f "$latest_backup/sysctl.conf.bak" ]]; then
+        cp "$latest_backup/sysctl.conf.bak" /etc/sysctl.conf
+        sysctl -p
+        echo "✅ 已从备份恢复配置: $latest_backup"
+    else
+        echo "❌ 备份文件不完整，恢复失败"
+        exit 1
+    fi
+}
+
 # 写入 sysctl 配置并立即生效
 add_sysctl_param() {
     local key="$1"
     local value="$2"
 
-    # 如果 /etc/sysctl.conf 已存在此参数，替换掉
     if grep -q "^$key" /etc/sysctl.conf 2>/dev/null; then
         sed -i "s|^$key.*|$key = $value|" /etc/sysctl.conf
     else
         echo "$key = $value" >> /etc/sysctl.conf
     fi
 
-    # 立即生效
     sysctl -w "$key=$value" >/dev/null
 }
 
 # 系统兼容性检查
 check_system_compatibility() {
-    # 检查是否为root用户
     if [[ $EUID -ne 0 ]]; then
         echo "❌ 必须以root用户运行此脚本"
         exit 1
     fi
 
-    # 检查系统类型
     if ! command -v lsb_release >/dev/null 2>&1; then
         if command -v apt-get >/dev/null 2>&1; then
             apt-get update && apt-get install -y lsb-release
@@ -86,7 +103,6 @@ check_system_compatibility() {
 
     echo "检测到的系统: $os_type $os_version"
 
-    # 检查必需工具
     local required_tools=("bc" "curl" "ip" "awk" "sed" "grep")
     for tool in "${required_tools[@]}"; do
         if ! command -v "$tool" >/dev/null 2>&1; then
@@ -107,6 +123,7 @@ check_system_compatibility() {
 # 解析命令行参数
 QDISC="fq"
 BACKUP=0
+RESTORE=0
 TEST_SERVERS=""
 
 while [[ $# -gt 0 ]]; do
@@ -117,6 +134,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         -b|--backup)
             BACKUP=1
+            shift
+            ;;
+        -r|--restore)
+            RESTORE=1
             shift
             ;;
         -t|--test-servers)
@@ -133,18 +154,25 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# 执行系统兼容性检查
+check_system_compatibility
+
+# 如果需要恢复配置
+if [[ $RESTORE -eq 1 ]]; then
+    restore_config
+    echo "⚠️ 已恢复配置，脚本退出"
+    exit 0
+fi
+
+# 如果需要备份
+if [[ $BACKUP -eq 1 ]]; then
+    backup_config
+fi
+
 # 验证队列调度器参数
 if [[ "$QDISC" != "fq" && "$QDISC" != "fq_codel" ]]; then
     echo "❌ 无效的队列调度器: $QDISC"
     show_help
-fi
-
-# 执行系统兼容性检查
-check_system_compatibility
-
-# 如果需要备份，先进行备份
-if [[ $BACKUP -eq 1 ]]; then
-    backup_config
 fi
 
 # 显示系统信息
@@ -180,7 +208,7 @@ for param in "${!SYSCTL_PARAMS[@]}"; do
     add_sysctl_param "$param" "${SYSCTL_PARAMS[$param]}"
 done
 
-# 改进的测速功能
+# 多服务器测速
 if [[ -n "$TEST_SERVERS" ]]; then
     echo -e "\n🚀 ==== 多服务器测速 ===="
     if ! command -v iperf3 >/dev/null 2>&1; then
@@ -204,4 +232,4 @@ fi
 
 echo -e "\n✨ ==== 配置完成 ===="
 echo "📝 日志已保存到: $LOG_FILE"
-echo "⚠️  建议重启服务器以确保所有设置生效"
+echo "⚠️ 建议重启服务器以确保所有设置生效"
