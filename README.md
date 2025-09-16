@@ -19,7 +19,7 @@
 
 快速开启bbr+fq_codel：
 ```bash
-wget https://raw.githubusercontent.com/suxayii/bbr-fq_codel/main/bbr-fq.sh && chmod +x bbr-fq.sh && ./bbr-fq.sh fq_codel
+wget https://raw.githubusercontent.com/suxayii/bbr-fq_codel/refs/heads/master/bbr-fq.sh && chmod +x bbr-fq.sh && ./bbr-fq.sh fq_codel
 ```
 
 快速开启bbr+fq：
