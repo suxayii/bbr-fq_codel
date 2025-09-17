@@ -1,235 +1,111 @@
 #!/bin/bash
 # 自动识别系统并启用BBR及网络优化（支持 fq / fq_codel + 可选测速）
-# 增加错误处理、参数验证、系统兼容性检查、配置备份和恢复功能
 
-# 严格模式和错误处理
 set -euo pipefail
-trap 'error_handler $? $LINENO $BASH_LINENO "$BASH_COMMAND" $(printf "::%s" ${FUNCNAME[@]:-})' ERR
 
-# 日志功能
-LOG_FILE="/var/log/bbr_setup_$(date +%Y%m%d_%H%M%S).log"
-exec 1> >(tee -a "$LOG_FILE")
-exec 2> >(tee -a "$LOG_FILE" >&2)
+# 用户选择队列调度器（fq 或 fq_codel）
+QDISC=${1:-fq}   # 默认 fq，可以执行时传参数切换，比如 ./bbr.sh fq_codel
 
-# 错误处理函数
-error_handler() {
-    local exit_code=$1
-    local line_no=$2
-    local bash_lineno=$3
-    local last_command=$4
-    local func_trace=$5
-    echo "❌ 错误发生在第 $line_no 行"
-    echo "命令: $last_command"
-    echo "错误代码: $exit_code"
-    echo "函数调用栈: $func_trace"
-    exit "$exit_code"
-}
-
-# 帮助信息
-show_help() {
-    cat << EOF
-用法: $0 [选项]
-
-选项:
-    -q, --qdisc <fq|fq_codel>     设置队列调度器 (默认: fq)
-    -b, --backup                  备份当前网络配置
-    -r, --restore                 从最近的备份恢复配置
-    -t, --test-servers "ip1 ip2"  指定测速服务器IP列表
-    -h, --help                    显示此帮助信息
-EOF
-    exit 0
-}
-
-# 配置备份函数
-backup_config() {
-    local backup_dir="/root/network_backup_$(date +%Y%m%d_%H%M%S)"
-    mkdir -p "$backup_dir"
-    cp /etc/sysctl.conf "$backup_dir/sysctl.conf.bak"
-    sysctl -a > "$backup_dir/sysctl_params.bak"
-    echo "✅ 配置已备份到: $backup_dir"
-}
-
-# 恢复配置函数
-restore_config() {
-    local latest_backup
-    latest_backup=$(ls -td /root/network_backup_* 2>/dev/null | head -n 1)
-
-    if [[ -z "$latest_backup" ]]; then
-        echo "❌ 未找到备份文件，无法恢复"
-        exit 1
-    fi
-
-    if [[ -f "$latest_backup/sysctl.conf.bak" ]]; then
-        cp "$latest_backup/sysctl.conf.bak" /etc/sysctl.conf
-        sysctl -p
-        echo "✅ 已从备份恢复配置: $latest_backup"
-    else
-        echo "❌ 备份文件不完整，恢复失败"
-        exit 1
-    fi
-}
-
-# 写入 sysctl 配置并立即生效
-add_sysctl_param() {
-    local key="$1"
-    local value="$2"
-
-    if grep -q "^$key" /etc/sysctl.conf 2>/dev/null; then
-        sed -i "s|^$key.*|$key = $value|" /etc/sysctl.conf
-    else
-        echo "$key = $value" >> /etc/sysctl.conf
-    fi
-
-    sysctl -w "$key=$value" >/dev/null
-}
-
-# 系统兼容性检查
-check_system_compatibility() {
-    if [[ $EUID -ne 0 ]]; then
-        echo "❌ 必须以root用户运行此脚本"
-        exit 1
-    fi
-
-    if ! command -v lsb_release >/dev/null 2>&1; then
-        if command -v apt-get >/dev/null 2>&1; then
-            apt-get update && apt-get install -y lsb-release
-        elif command -v yum >/dev/null 2>&1; then
-            yum install -y redhat-lsb-core
-        fi
-    fi
-
-    local os_type=$(lsb_release -si 2>/dev/null || cat /etc/*release | grep '^ID=' | cut -d= -f2 || echo "Unknown")
-    local os_version=$(lsb_release -sr 2>/dev/null || cat /etc/*release | grep '^VERSION_ID=' | cut -d= -f2 || echo "Unknown")
-
-    echo "检测到的系统: $os_type $os_version"
-
-    local required_tools=("bc" "curl" "ip" "awk" "sed" "grep")
-    for tool in "${required_tools[@]}"; do
-        if ! command -v "$tool" >/dev/null 2>&1; then
-            echo "❌ 缺少必需工具: $tool"
-            echo "正在尝试安装..."
-            if command -v apt-get >/dev/null 2>&1; then
-                apt-get update && apt-get install -y "$tool"
-            elif command -v yum >/dev/null 2>&1; then
-                yum install -y "$tool"
-            else
-                echo "❌ 无法自动安装 $tool，请手动安装"
-                exit 1
-            fi
-        fi
-    done
-}
-
-# 解析命令行参数
-QDISC="fq"
-BACKUP=0
-RESTORE=0
-TEST_SERVERS=""
-
-while [[ $# -gt 0 ]]; do
-    case $1 in
-        -q|--qdisc)
-            QDISC="$2"
-            shift 2
-            ;;
-        -b|--backup)
-            BACKUP=1
-            shift
-            ;;
-        -r|--restore)
-            RESTORE=1
-            shift
-            ;;
-        -t|--test-servers)
-            TEST_SERVERS="$2"
-            shift 2
-            ;;
-        -h|--help)
-            show_help
-            ;;
-        *)
-            echo "❌ 未知参数: $1"
-            show_help
-            ;;
-    esac
-done
-
-# 执行系统兼容性检查
-check_system_compatibility
-
-# 如果需要恢复配置
-if [[ $RESTORE -eq 1 ]]; then
-    restore_config
-    echo "⚠️ 已恢复配置，脚本退出"
-    exit 0
-fi
-
-# 如果需要备份
-if [[ $BACKUP -eq 1 ]]; then
-    backup_config
-fi
-
-# 验证队列调度器参数
 if [[ "$QDISC" != "fq" && "$QDISC" != "fq_codel" ]]; then
-    echo "❌ 无效的队列调度器: $QDISC"
-    show_help
+  echo "❌ 参数错误，请使用: $0 [fq|fq_codel]"
+  exit 1
 fi
 
-# 显示系统信息
-echo -e "\n📊 ==== 系统与网络信息 ===="
-printf "%-20s: %s\n" "CPU型号" "$(lscpu | grep 'Model name' | awk -F ':' '{print $2}' | sed 's/^[ \t]*//')"
-printf "%-20s: %s\n" "内核版本" "$(uname -r)"
-printf "%-20s: %s\n" "操作系统" "$(source /etc/os-release && echo "$PRETTY_NAME")"
-printf "%-20s: %s\n" "公网IP" "$(curl -s --max-time 5 https://ipinfo.io/ip || echo '获取失败')"
+echo "==== 系统与网络信息 ===="
+echo "CPU型号: $(lscpu | grep 'Model name' | awk -F ':' '{print $2}' | sed 's/^[ \t]*//')"
+echo "内核版本: $(uname -r)"
+echo "操作系统: $(source /etc/os-release && echo $PRETTY_NAME)"
+echo "公网IP : $(curl -s --max-time 5 https://ipinfo.io/ip || echo '获取失败')"
+echo "当前默认路由网关:"
+ip route show default || echo "无法获取路由信息"
+echo "-----------------------"
 
-# 网络参数优化
-declare -A SYSCTL_PARAMS=(
-    ["net.core.rmem_max"]="16777216"
-    ["net.core.wmem_max"]="16777216"
-    ["net.core.netdev_max_backlog"]="16384"
-    ["net.core.somaxconn"]="8192"
-    ["net.ipv4.tcp_rmem"]="4096 87380 16777216"
-    ["net.ipv4.tcp_wmem"]="4096 65536 16777216"
-    ["net.ipv4.tcp_fin_timeout"]="10"
-    ["net.ipv4.tcp_tw_reuse"]="1"
-    ["net.ipv4.tcp_max_syn_backlog"]="8192"
-    ["net.ipv4.tcp_max_tw_buckets"]="5000"
-    ["net.ipv4.tcp_synack_retries"]="2"
-    ["net.ipv4.tcp_syncookies"]="1"
-    ["net.ipv4.tcp_fastopen"]="3"
-    ["net.ipv4.tcp_mtu_probing"]="1"
-    ["net.ipv4.tcp_slow_start_after_idle"]="0"
-    ["net.ipv4.ip_local_port_range"]="1024 65535"
-)
-
-echo -e "\n🔧 ==== 应用网络优化参数 ===="
-for param in "${!SYSCTL_PARAMS[@]}"; do
-    echo "设置 $param = ${SYSCTL_PARAMS[$param]}"
-    add_sysctl_param "$param" "${SYSCTL_PARAMS[$param]}"
-done
-
-# 多服务器测速
-if [[ -n "$TEST_SERVERS" ]]; then
-    echo -e "\n🚀 ==== 多服务器测速 ===="
-    if ! command -v iperf3 >/dev/null 2>&1; then
-        echo "正在安装 iperf3..."
-        if command -v apt-get >/dev/null 2>&1; then
-            apt-get update && apt-get install -y iperf3
-        elif command -v yum >/dev/null 2>&1; then
-            yum install -y iperf3
-        fi
-    fi
-
-    for server in $TEST_SERVERS; do
-        echo "测试服务器: $server"
-        if iperf3 -c "$server" -t 10 -P 3; then
-            echo "✅ $server 测速完成"
-        else
-            echo "❌ $server 测速失败"
-        fi
-    done
+# 检查内核版本
+kernel_version=$(uname -r | awk -F'.' '{print $1"."$2}')
+if (( $(echo "$kernel_version < 4.9" | bc -l) )); then
+  echo "内核版本过低（需要>=4.9），请先升级内核。"
+  exit 1
 fi
 
-echo -e "\n✨ ==== 配置完成 ===="
-echo "📝 日志已保存到: $LOG_FILE"
-echo "⚠️ 建议重启服务器以确保所有设置生效"
+# 添加或更新 sysctl 参数函数
+add_sysctl_param() {
+  local key=$1
+  local value=$2
+  if grep -q "^${key}" /etc/sysctl.conf; then
+    sed -i "s|^${key}.*|${key} = ${value}|" /etc/sysctl.conf
+  else
+    echo "${key} = ${value}" >> /etc/sysctl.conf
+  fi
+}
+
+echo "==== 启用 BBR ===="
+add_sysctl_param "net.core.default_qdisc" "$QDISC"
+add_sysctl_param "net.ipv4.tcp_congestion_control" "bbr"
+
+sysctl -p >/dev/null
+
+# 验证 BBR
+current_cc=$(sysctl -n net.ipv4.tcp_congestion_control)
+current_qdisc=$(sysctl -n net.core.default_qdisc)
+echo "✅ 拥塞控制算法: $current_cc"
+echo "✅ 队列调度器   : $current_qdisc"
+
+if [[ "$current_cc" != "bbr" ]]; then
+  echo "⚠️ BBR 未启用，尝试加载模块..."
+  if modprobe tcp_bbr 2>/dev/null; then
+    echo "tcp_bbr" > /etc/modules-load.d/bbr.conf
+    echo "✅ tcp_bbr 模块已加载，下次重启后生效"
+  else
+    echo "❌ 系统不支持或已内置 BBR，请手动检查。"
+  fi
+fi
+
+echo "==== 网络参数优化 ===="
+# 优化参数
+add_sysctl_param "net.core.rmem_max" "2500000"
+add_sysctl_param "net.core.wmem_max" "2500000"
+add_sysctl_param "net.ipv4.tcp_rmem" "4096 87380 2500000"
+add_sysctl_param "net.ipv4.tcp_wmem" "4096 65536 2500000"
+add_sysctl_param "net.ipv4.tcp_fin_timeout" "10"
+add_sysctl_param "net.ipv4.tcp_tw_reuse" "1"
+add_sysctl_param "net.ipv4.tcp_max_syn_backlog" "8192"
+add_sysctl_param "net.ipv4.tcp_synack_retries" "2"
+add_sysctl_param "net.ipv4.tcp_syncookies" "1"
+add_sysctl_param "net.ipv4.tcp_fastopen" "3"
+
+sysctl -p >/dev/null
+echo "✅ 网络优化参数已应用。"
+
+echo "==== 验证队列调度器 ===="
+default_iface=$(ip route show default | awk '{print $5}' | head -n1)
+if [[ -n "$default_iface" ]]; then
+  echo "检测默认网卡: $default_iface"
+  tc qdisc show dev "$default_iface" | grep -E "fq|fq_codel" || echo "⚠️ 未检测到 $QDISC，请检查"
+else
+  echo "⚠️ 未找到默认网卡，无法验证 qdisc"
+fi
+
+echo "==== 可选测速环节 ===="
+if ! command -v iperf3 >/dev/null 2>&1; then
+  echo "⚠️ 未检测到 iperf3，尝试安装..."
+  if command -v apt-get >/dev/null 2>&1; then
+    apt-get update && apt-get install -y iperf3
+  elif command -v yum >/dev/null 2>&1; then
+    yum install -y iperf3
+  else
+    echo "❌ 无法自动安装 iperf3，请手动安装。"
+  fi
+fi
+
+if command -v iperf3 >/dev/null 2>&1; then
+  echo "👉 运行简单的本地测试: iperf3 -s -1 & iperf3 -c 127.0.0.1 -t 5"
+  iperf3 -s -1 >/dev/null 2>&1 &
+  sleep 1
+  iperf3 -c 127.0.0.1 -t 5
+  echo "✅ 本地带宽测试完成（可用 iperf3 -c <远程IP> 测跨机效果）"
+else
+  echo "⚠️ iperf3 不可用，跳过测速"
+fi
+
+echo "==== 完成 ===="
+echo "建议重启服务器以确保全部设置生效。"
