@@ -31,16 +31,9 @@
 ### 基本用法
 ```bash
 # 下载并运行脚本
-wget -O bbr.sh https://raw.githubusercontent.com/yourusername/bbr-optimizer/main/bbr.sh
-chmod +x bbr.sh
-sudo ./bbr.sh
+wget -O bbr.sh https://raw.githubusercontent.com/suxayii/bbr-fq_codel/main/bbr-fq.sh chmod +x bbr.sh sudo ./bbr.sh fq_codel
 ```
 
-### 指定队列调度算法
-```bash
-# 使用fq_codel算法（默认是fq）
-sudo ./bbr.sh fq_codel
-```
 
 ## ⚙️ 系统要求
 
