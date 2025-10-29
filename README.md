@@ -22,16 +22,6 @@
 wget https://raw.githubusercontent.com/suxayii/bbr-fq_codel/refs/heads/master/bbr-fq.sh && chmod +x bbr-fq.sh && ./bbr-fq.sh fq_codel
 
 ```
-```bash
-wget https://raw.githubusercontent.com/suxayii/bbr-fq_codel/refs/heads/master/st-bbr.sh && chmod +x st-bbr.sh && ./st-bbr.sh fq_codel
-
-```
-
-快速开启bbr+fq：
-```bash
-wget https://raw.githubusercontent.com/suxayii/bbr-fq_codel/main/bbr-fq.sh && chmod +x bbr-fq.sh && ./bbr-fq.sh
-```
-
 
 ## 脚本功能详解
 
