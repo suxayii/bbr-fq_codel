@@ -1,3 +1,6 @@
+<div align="right">
+<a href="README_EN.md" style="background-color: #4CAF50; color: white; padding: 8px 16px; text-decoration: none; border-radius: 4px; font-weight: bold;">中文版本</a>
+</div>
 # BBR + 网络优化自动配置脚本
 
 ![GitHub stars](https://img.shields.io/github/stars/yourusername/bbr-optimizer?style=social)
