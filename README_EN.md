@@ -1,5 +1,9 @@
 # BBR Network Optimization Script
 
+## Language Selection | 语言选择
+
+- [中文版本](README.md)
+
 ![GitHub stars](https://img.shields.io/github/stars/yourusername/bbr-optimizer?style=social)
 ![GitHub forks](https://img.shields.io/github/forks/yourusername/bbr-optimizer?style=social)
 ![GitHub license](https://img.shields.io/github/license/yourusername/bbr-optimizer)
