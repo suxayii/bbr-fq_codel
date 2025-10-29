@@ -1,8 +1,7 @@
-<div align="right">
-<a href="README_EN.md" style="background-color: #4CAF50; color: white; padding: 8px 16px; text-decoration: none; border-radius: 4px; font-weight: bold;">中文版本</a>
-</div>
 # BBR + 网络优化自动配置脚本
-
+<div align="right">
+<a href="README_EN.md" style="background-color: #4CAF50; color: white; padding: 8px 16px; text-decoration: none; border-radius: 4px; font-weight: bold;">English</a>
+</div>
 ![GitHub stars](https://img.shields.io/github/stars/yourusername/bbr-optimizer?style=social)
 ![GitHub forks](https://img.shields.io/github/forks/yourusername/bbr-optimizer?style=social)
 ![GitHub license](https://img.shields.io/github/license/yourusername/bbr-optimizer)
