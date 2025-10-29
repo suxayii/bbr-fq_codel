@@ -28,18 +28,17 @@ A powerful one-click BBR network optimization script that automatically configur
 
 ## 🚀 Quick Start
 
-### Basic Usage
+### Download and run the script
 ```bash
-# Download and run the script
-wget -O bbr.sh https://raw.githubusercontent.com/yourusername/bbr-optimizer/main/bbr.sh
+wget -O bbr.sh https://raw.githubusercontent.com/suxayii/bbr-fq_codel/main/bbr-fq.sh
 chmod +x bbr.sh
-sudo ./bbr.sh
+sudo ./bbr.sh fq_codel
 ```
 
-### Specify Queueing Discipline
+### Rollback backup
 ```bash
-# Use fq_codel algorithm (default is fq)
-sudo ./bbr.sh fq_codel
+sudo cp /etc/sysctl.conf.bak-YYYYMMDD-HHMMSS /etc/sysctl.conf
+sudo sysctl -p
 ```
 
 ## ⚙️ System Requirements
