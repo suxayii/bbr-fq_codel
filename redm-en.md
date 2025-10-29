@@ -28,9 +28,8 @@
 
 ## 🚀 快速开始
 
-### 基本用法
+### 下载并运行脚本
 ```bash
-# 下载并运行脚本
 wget -O bbr.sh https://raw.githubusercontent.com/suxayii/bbr-fq_codel/main/bbr-fq.sh
 chmod +x bbr.sh
 sudo ./bbr.sh fq_codel
