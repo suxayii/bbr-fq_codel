@@ -33,14 +33,14 @@
 # 下载并运行脚本
 wget -O bbr.sh https://raw.githubusercontent.com/suxayii/bbr-fq_codel/main/bbr-fq.sh
 chmod +x bbr.sh
-sudo ./bbr.sh fq_codel```
+sudo ./bbr.sh fq_codel
+```
 
 ### 回滚备份
 ```bash
 sudo cp /etc/sysctl.conf.bak-YYYYMMDD-HHMMSS /etc/sysctl.conf
 sudo sysctl -p
 ```
-
 ## ⚙️ 系统要求
 
 - **内核版本**：Linux内核4.9或更高版本（BBR需要）
