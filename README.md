@@ -19,6 +19,14 @@
 
 快速开启bbr+fq_codel：
 ```bash
+sudo cp /etc/sysctl.conf.bak-YYYYMMDD-HHMMSS /etc/sysctl.conf
+sudo sysctl -p
+
+```
+
+## 回滚备份
+
+```bash
 wget https://raw.githubusercontent.com/suxayii/bbr-fq_codel/refs/heads/master/bbr-fq.sh && chmod +x bbr-fq.sh && ./bbr-fq.sh fq_codel
 
 ```
