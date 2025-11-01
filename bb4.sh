@@ -1,7 +1,8 @@
 #!/bin/bash
 # =========================================================
-# BBR + 网络优化自动配置脚本 (v5.3)
-# - 自动检测 IPv6 支持（若无则跳过 IPv6 参数）
+# BBR + 网络优化自动配置脚本 (v5.4)
+# - 自动检测 IPv6 支持（若无则跳过）
+# - 自动清理无效 IPv6 配置（防止 sysctl 报错）
 # - 自动检测网卡
 # - 修改目标：/etc/sysctl.conf
 # - 支持系统：Debian / Ubuntu / CentOS / AlmaLinux / RockyLinux
@@ -140,6 +141,25 @@ fi
 for param in "${PARAMS[@]}"; do
   update_sysctl_param "${param%%=*}" "${param#*=}"
 done
+
+# ---------------- 自动清理无效 IPv6 配置 ----------------
+echo "==== 清理无效 IPv6 sysctl 参数 ===="
+CONF_FILES=(/etc/sysctl.conf /etc/sysctl.d/*.conf /run/sysctl.d/*.conf /usr/lib/sysctl.d/*.conf)
+for conf in "${CONF_FILES[@]}"; do
+  [[ -f $conf ]] || continue
+  grep -nE '^[[:space:]]*net\.ipv6\.conf\.' "$conf" 2>/dev/null | while IFS=: read -r lineno line; do
+    if [[ $line =~ net\.ipv6\.conf\.([a-zA-Z0-9:_.-]+)\.([a-zA-Z0-9_]+) ]]; then
+      iface="${BASH_REMATCH[1]}"
+      param="${BASH_REMATCH[2]}"
+      proc_path="/proc/sys/net/ipv6/conf/${iface}/${param}"
+      if [[ ! -e "$proc_path" ]]; then
+        sed -i -E "${lineno}s|^|# |" "$conf"
+        echo "🧹 注释: $conf 行 $lineno -> net.ipv6.conf.${iface}.${param} (不存在)"
+      fi
+    fi
+  done
+done
+echo "✅ 清理完成"
 
 # ---------------- 应用配置 ----------------
 echo "==== 应用配置 ===="
