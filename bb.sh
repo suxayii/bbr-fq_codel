@@ -1,13 +1,13 @@
 #!/bin/bash
 # =========================================================
-# BBR + 网络优化自动配置脚本 
-# - v5.2: 自动网卡识别 + IPv6 智能适配 + 全面诊断 + 自动模块加载 + 性能测试
-# - 修改目标：直接修改 /etc/sysctl.conf
+# BBR + 网络优化自动配置脚本 (v5.3)
+# - 自动检测 IPv6 支持（若无则跳过 IPv6 参数）
+# - 自动检测网卡
+# - 修改目标：/etc/sysctl.conf
 # - 支持系统：Debian / Ubuntu / CentOS / AlmaLinux / RockyLinux
 # =========================================================
 set -euo pipefail
 trap 'echo "❌ 发生错误于第 $LINENO 行: $BASH_COMMAND"; exit 1' ERR
-
 LOG_FILE="/var/log/bbr-optimize.log"
 SYSCTL_CONF="/etc/sysctl.conf"
 QDISC=${1:-fq}
@@ -54,7 +54,6 @@ get_public_ip() {
   done
   echo "获取失败"
 }
-
 echo "公网 IP: $(get_public_ip)"
 echo "默认路由:"
 ip route show default || echo "无法获取路由信息"
@@ -72,7 +71,7 @@ BACKUP_FILE="/etc/sysctl.conf.bak-$(date +%Y%m%d-%H%M%S)"
 cp -a "$SYSCTL_CONF" "$BACKUP_FILE" 2>/dev/null || true
 echo "✅ 已备份原 sysctl.conf 到: $BACKUP_FILE"
 
-# ---------------- 更新函数 ----------------
+# ---------------- 参数更新函数 ----------------
 update_sysctl_param() {
   local key=$1 value=$2
   if grep -qE "^[[:space:]]*${key}[[:space:]]*=" "$SYSCTL_CONF"; then
@@ -86,7 +85,6 @@ update_sysctl_param() {
 
 # ---------------- 写入参数 ----------------
 echo "==== 写入 BBR 及网络优化参数 ===="
-
 PARAMS=(
   "fs.file-max=6815744"
   "net.ipv4.tcp_no_metrics_save=1"
@@ -111,8 +109,7 @@ PARAMS=(
   "net.ipv4.conf.default.forwarding=1"
   "net.core.default_qdisc=${QDISC}"
   "net.ipv4.tcp_congestion_control=bbr"
-  "net.ipv6.conf.all.forwarding=1"
-  "net.ipv6.conf.default.forwarding=1"
+  # 附加优化
   "net.ipv4.tcp_fin_timeout=10"
   "net.ipv4.tcp_tw_reuse=1"
   "net.ipv4.tcp_max_syn_backlog=8192"
@@ -121,19 +118,25 @@ PARAMS=(
   "net.ipv4.tcp_fastopen=3"
 )
 
-# -------- 动态检测实际网卡并添加 IPv6 参数 --------
-iface=$(ip route show default | awk '{print $5}' | head -n1)
-if [[ -n "$iface" ]]; then
-  echo "检测到默认网卡: $iface"
-  PARAMS+=(
-    "net.ipv6.conf.${iface}.autoconf=0"
-    "net.ipv6.conf.${iface}.accept_ra=0"
-  )
+# -------- 检测 IPv6 支持并动态配置 --------
+if [[ -f /proc/net/if_inet6 ]] && [[ -s /proc/net/if_inet6 ]]; then
+  echo "✅ 检测到系统支持 IPv6"
+  iface=$(ip route show default | awk '{print $5}' | head -n1)
+  if [[ -n "$iface" ]]; then
+    echo "检测到默认网卡: $iface"
+    PARAMS+=(
+      "net.ipv6.conf.all.forwarding=1"
+      "net.ipv6.conf.default.forwarding=1"
+      "net.ipv6.conf.${iface}.autoconf=0"
+      "net.ipv6.conf.${iface}.accept_ra=0"
+    )
+  else
+    echo "⚠️ 未检测到默认网卡，跳过 IPv6 相关参数"
+  fi
 else
-  echo "⚠️ 未检测到默认网卡，跳过 IPv6 相关参数"
+  echo "🚫 未检测到 IPv6 支持，跳过所有 IPv6 参数设置"
 fi
 
-# ---------------- 写入配置 ----------------
 for param in "${PARAMS[@]}"; do
   update_sysctl_param "${param%%=*}" "${param#*=}"
 done
@@ -170,7 +173,9 @@ else
   echo "⚠️ 未检测到 tcp_bbr 模块，可能已内置或需重启"
 fi
 
+iface=$(ip route show default | awk '{print $5}' | head -n1)
 if [[ -n "$iface" ]]; then
+  echo "默认网卡: $iface"
   if command -v tc >/dev/null 2>&1 && tc qdisc show dev "$iface" | grep -qE "$QDISC"; then
     echo "✅ $QDISC 已应用"
   else
