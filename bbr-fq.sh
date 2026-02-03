@@ -1,17 +1,89 @@
 #!/bin/bash
 # =========================================================
-# BBR + 网络优化自动配置脚本 
+# BBR + 网络优化自动配置脚本
 # - v5.1: 时间戳备份 + 全面诊断 + 自动模块加载 + 性能测试
 # - 修改目标：直接修改 /etc/sysctl.conf
 # - 支持系统：Debian / Ubuntu / CentOS / AlmaLinux / RockyLinux
 # =========================================================
-set -euo pipefail
-trap 'echo "❌ 发生错误于第 $LINENO 行: $BASH_COMMAND"; exit 1' ERR
+set -Eeuo pipefail
+
+cleanup() {
+  if [[ -n "${iperf_server_pid:-}" ]] && kill -0 "$iperf_server_pid" >/dev/null 2>&1; then
+    kill "$iperf_server_pid" >/dev/null 2>&1 || true
+  fi
+}
+
+trap 'cleanup; echo "❌ 发生错误于第 ${BASH_LINENO[0]} 行: ${BASH_COMMAND}" >&2; exit 1' ERR
+trap cleanup EXIT
+
 LOG_FILE="/var/log/bbr-optimize.log"
 SYSCTL_CONF="/etc/sysctl.conf"
-QDISC=${1:-fq}
+DEFAULT_QDISC="fq"
 VALID_QDISC=("fq" "fq_codel")
+SKIP_SPEEDTEST=false
+
+usage() {
+  cat <<'EOF'
+用法: ./bbr-fq.sh [选项] [fq|fq_codel]
+
+选项:
+  -q, --qdisc <fq|fq_codel>   指定默认队列算法（默认: fq）
+      --skip-speedtest        跳过 iperf3 安装与测速
+  -h, --help                  显示此帮助信息
+
+也可以直接以位置参数的形式传入 fq 或 fq_codel。
+EOF
+}
+
+QDISC="$DEFAULT_QDISC"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    fq|fq_codel)
+      QDISC="$1"
+      shift
+      ;;
+    -q|--qdisc)
+      if [[ $# -lt 2 ]]; then
+        echo "❌ 参数 $1 需要值"
+        usage
+        exit 1
+      fi
+      QDISC="$2"
+      shift 2
+      ;;
+    --skip-speedtest)
+      SKIP_SPEEDTEST=true
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "❌ 未知参数: $1"
+      usage
+      exit 1
+      ;;
+  esac
+done
+
+if [[ $EUID -ne 0 ]]; then
+  echo "❌ 请使用 root 权限运行"
+  exit 1
+fi
+
+if [[ ! -d "$(dirname "$LOG_FILE")" ]]; then
+  mkdir -p "$(dirname "$LOG_FILE")"
+fi
+touch "$LOG_FILE"
+touch "$SYSCTL_CONF"
+
+iperf_server_pid=""
+
+command -v tee >/dev/null 2>&1 || { echo "❌ 缺少命令: tee"; exit 1; }
 exec > >(tee -a "$LOG_FILE") 2>&1
+
 echo "================ $(date) ================"
 echo "🗒️ 日志记录到 $LOG_FILE"
 # ---------------- 权限检查 ----------------
@@ -19,8 +91,8 @@ if [[ $EUID -ne 0 ]]; then
   echo "❌ 请使用 root 权限运行"
   exit 1
 fi
-for cmd in curl ip lscpu sysctl awk sed grep tee; do
-  command -v $cmd >/dev/null 2>&1 || { echo "❌ 缺少命令: $cmd"; exit 1; }
+for cmd in curl ip lscpu sysctl awk sed grep modprobe; do
+  command -v "$cmd" >/dev/null 2>&1 || { echo "❌ 缺少命令: $cmd"; exit 1; }
 done
 # ---------------- 参数设置 ----------------
 if [[ ! " ${VALID_QDISC[*]} " =~ " ${QDISC} " ]]; then
@@ -113,7 +185,7 @@ for param in "${PARAMS[@]}"; do
 done
 # ---------------- 应用配置 ----------------
 echo "==== 应用配置 ===="
-if sysctl -p && sysctl --system; then
+if sysctl -p "$SYSCTL_CONF"; then
   echo "✅ sysctl 参数应用成功"
 else
   echo "⚠️ sysctl 应用时出错，请检查文件格式"
@@ -152,30 +224,36 @@ else
 fi
 # ---------------- 可选带宽测试 ----------------
 echo "==== 可选测速环节 ===="
-if ! command -v iperf3 >/dev/null 2>&1; then
-  echo "⚠️ iperf3 未安装，尝试安装..."
-  if command -v apt-get >/dev/null 2>&1; then
-    apt-get update -y -qq && apt-get install -y -qq iperf3
-  elif command -v yum >/dev/null 2>&1; then
-    yum install -y -q iperf3
-  elif command -v dnf >/dev/null 2>&1; then
-    dnf install -y -q iperf3
-  else
-    echo "❌ 无可用包管理器，请手动安装 iperf3"
-  fi
-fi
-if command -v iperf3 >/dev/null 2>&1; then
-  echo "👉 正在执行本地带宽测试 (3秒)..."
-  iperf3 -s -1 >/dev/null 2>&1 &
-  server_pid=$!
-  sleep 1
-  iperf3 -c 127.0.0.1 -t 3 || echo "⚠️ 测速失败（可能防火墙阻止 5201 端口）"
-  if [[ -n "${server_pid:-}" ]] && ps -p "$server_pid" >/dev/null 2>&1; then
-    kill "$server_pid" >/dev/null 2>&1 || true
-  fi
-  echo "✅ 测速完成"
+if $SKIP_SPEEDTEST; then
+  echo "ℹ️ 已根据参数跳过测速"
 else
-  echo "⚠️ 跳过测速（iperf3 不可用）"
+  if ! command -v iperf3 >/dev/null 2>&1; then
+    echo "⚠️ iperf3 未安装，尝试安装..."
+    if command -v apt-get >/dev/null 2>&1; then
+      apt-get update -qq && apt-get install -y -qq iperf3
+    elif command -v yum >/dev/null 2>&1; then
+      yum install -y -q iperf3
+    elif command -v dnf >/dev/null 2>&1; then
+      dnf install -y -q iperf3
+    else
+      echo "❌ 无可用包管理器，请手动安装 iperf3"
+    fi
+  fi
+
+  if command -v iperf3 >/dev/null 2>&1; then
+    echo "👉 正在执行本地带宽测试 (3秒)..."
+    iperf3 -s -1 >/dev/null 2>&1 &
+    iperf_server_pid=$!
+    sleep 1
+    iperf3 -c 127.0.0.1 -t 3 || echo "⚠️ 测速失败（可能防火墙阻止 5201 端口）"
+    if [[ -n "${iperf_server_pid:-}" ]] && ps -p "$iperf_server_pid" >/dev/null 2>&1; then
+      kill "$iperf_server_pid" >/dev/null 2>&1 || true
+    fi
+    iperf_server_pid=""
+    echo "✅ 测速完成"
+  else
+    echo "⚠️ 跳过测速（iperf3 不可用）"
+  fi
 fi
 echo ""
 echo "🎉 BBR 网络优化完成！建议重启系统确保配置完全生效。"
