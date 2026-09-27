@@ -60,19 +60,19 @@ Shadowrocket 底层机制中，`dns-server` 与 `direct-dns-server` 仅用于处
 
 ```mermaid
 flowchart TD
-    Req([发起域名解析请求]) --> CheckRule{命中规则类型?}
+    Req(["发起域名解析请求"]) --> CheckRule{"命中规则类型?"}
     
-    CheckRule -- 直连规则 DIRECT --> DirectDNS[direct-dns-server\n国内主流 DoH (阿里/腾讯/360)]
-    DirectDNS --> DirectIP[国内最佳 CDN IP\n直连访问]
+    CheckRule -- "直连规则 DIRECT" --> DirectDNS["direct-dns-server\n国内主流 DoH (阿里/腾讯/360)"]
+    DirectDNS --> DirectIP["国内最佳 CDN IP\n直连访问"]
 
-    CheckRule -- 代理规则 PROXY + force-remote-dns --> RemoteNode[代理节点远端解析\nRemote DNS]
-    RemoteNode --> ProxyIP[节点本地解析海外 IP\n无污染安全直达]
+    CheckRule -- "代理规则 PROXY + force-remote-dns" --> RemoteNode["代理节点远端解析\nRemote DNS"]
+    RemoteNode --> ProxyIP["节点本地解析海外 IP\n无污染安全直达"]
 
-    CheckRule -- 需本地解析的非直连查询 --> ProxyDoH[dns-server\n通过代理转发的境外 DoH\n(Cloudflare/Google DoH #proxy)]
-    ProxyDoH --> SafeOverseaIP[安全海外 IP\n进入代理通道]
+    CheckRule -- "需本地解析的非直连查询" --> ProxyDoH["dns-server\n通过代理转发的境外 DoH\n(Cloudflare/Google DoH #proxy)"]
+    ProxyDoH --> SafeOverseaIP["安全海外 IP\n进入代理通道"]
 
-    CheckRule -- 节点域名引导 / Bootstrap --> BootstrapDNS[proxy-dns-server\n国内安全 DoH (443端口)]
-    BootstrapDNS --> NodeIP[解析节点真实 IP\n建立代理连接]
+    CheckRule -- "节点域名引导 / Bootstrap" --> BootstrapDNS["proxy-dns-server\n国内安全 DoH (443端口)"]
+    BootstrapDNS --> NodeIP["解析节点真实 IP\n建立代理连接"]
 ```
 
 ### 参数配置说明
@@ -95,24 +95,24 @@ flowchart TD
    - **原版痛点**：若未加 `no-resolve`，所有未命中前面域名的流量，在判定是否为中国 IP 时会**强制触发本地 DNS 解析**。如果此时域名属于未收录的海外网站，将被直接送给运营商解析并立刻遭遇污染伪造 IP。
    - **补丁效果**：`no-resolve` 使得仅有纯 IP 请求或已在前面步骤解析过的请求才参与 GEOIP 判定；未匹配到的域名直接流入 `FINAL,proxy` 并在节点远端解析，实现 100% 防投毒。
 
-   ```mermaid
-   flowchart TD
-       subgraph BAD ["❌ 传统/原版配置痛点 (未加 no-resolve)"]
-           direction TB
-           B1["访问未收录的海外网站"] --> B2["逐层规则下坠匹配"]
-           B2 --> B3["命中 GEOIP,CN,DIRECT"]
-           B3 --> B4["⚠️ 强制触发本地 DNS 解析反查 IP"]
-           B4 --> B5["运营商 DNS 投毒 / 伪造虚假 IP\n(导致 DNS 泄漏 + 页面被阻断劫持)"]
-       end
+```mermaid
+flowchart TD
+    subgraph BAD["❌ 传统/原版配置痛点 (未加 no-resolve)"]
+        direction TB
+        B1["访问未收录的海外网站"] --> B2["逐层规则下坠匹配"]
+        B2 --> B3["命中 GEOIP,CN,DIRECT"]
+        B3 --> B4["⚠️ 强制触发本地 DNS 解析反查 IP"]
+        B4 --> B5["运营商 DNS 投毒 / 伪造虚假 IP\n(导致 DNS 泄漏 + 页面被阻断劫持)"]
+    end
 
-       subgraph GOOD ["✅ 本配置防御闭环 (GEOIP,CN,DIRECT,no-resolve)"]
-           direction TB
-           G1["访问未收录的海外网站"] --> G2["逐层规则下坠匹配"]
-           G2 --> G3["命中 GEOIP,CN,DIRECT,no-resolve"]
-           G3 -- "是域名而非 IP，跳过反查" --> G4["安全下坠至 FINAL,proxy"]
-           G4 --> G5["🛡️ 代理节点远端安全解析\n(100% 杜绝本地投毒与隐私泄漏)"]
-       end
-   ```
+    subgraph GOOD["✅ 本配置防御闭环 (GEOIP,CN,DIRECT,no-resolve)"]
+        direction TB
+        G1["访问未收录的海外网站"] --> G2["逐层规则下坠匹配"]
+        G2 --> G3["命中 GEOIP,CN,DIRECT,no-resolve"]
+        G3 -- "是域名而非 IP，跳过反查" --> G4["安全下坠至 FINAL,proxy"]
+        G4 --> G5["🛡️ 代理节点远端安全解析\n(100% 杜绝本地投毒与隐私泄漏)"]
+    end
+```
 
 2. **`private-ip-answer = true`**
    - 丢弃上游 DNS 返回的私有地址（如 `127.0.0.1`、`0.0.0.0`、`192.168.x.x`）。有效拦截 DNS 重绑定攻击与恶意污染回包。
@@ -136,10 +136,10 @@ sequenceDiagram
     autonumber
     actor User as 👤 用户设备
     participant SR as 🚀 Shadowrocket
-    participant Node as 🌐 代理节点 (远端)
-    participant CF as 🛡️ Cloudflare (Turnstile)
-    participant AI as 🧠 AI API / Web
-    participant LK as 🎙️ LiveKit (实时语音)
+    participant Node as 🌐 代理远端节点
+    participant CF as 🛡️ Cloudflare 验证
+    participant AI as 🧠 AI 核心服务
+    participant LK as 🎙️ LiveKit 实时语音
 
     User->>SR: 发起 AI 访问 (chatgpt.com / claude.ai)
     SR->>Node: 强制远端解析 (force-remote-dns)
@@ -188,20 +188,20 @@ sequenceDiagram
 flowchart TD
     Inflow(["🌐 入站网络请求\n(域名 / IP)"]) --> L1
     
-    subgraph Pipeline ["⚡ 规则分层极速匹配引擎"]
-        L1["1️⃣ 高频域名快表 (Top-Frequent)\nYouTube / Google / X / OpenAI / Netflix 等\n<small>🚀 90%+ 日常流量 20 行内极速命中，低开销</small>"]
-        L1 -- 未命中 --> L2["2️⃣ 核心通讯与协议集\nTelegram CIDR / Apple News / WebSocket\n<small>📦 专用 IP-CIDR 段与长连接加固</small>"]
-        L2 -- 未命中 --> L3["3️⃣ 垂直领域分类集\nGitHub / Steam / Spotify / Notion / PyPI\n<small>🎯 开发者与流媒体精细分流</small>"]
-        L3 -- 未命中 --> L4["4️⃣ 深度 AI 矩阵 (force-remote-dns)\nClaude Artifacts / LiveKit / Cloudflare\n<small>🤖 全链路反欺诈与低延迟语音直通</small>"]
-        L4 -- 未命中 --> L5["5️⃣ GEOIP,CN,DIRECT,no-resolve\n中国大陆 IP 段直连\n<small>🛡️ 仅纯 IP 判定，跳过域名反查防污染</small>"]
-        L5 -- 未命中 --> L6["6️⃣ FINAL,proxy\n安全兜底层\n<small>🔒 未匹配流量强制送往节点远端解析</small>"]
+    subgraph Pipeline["⚡ 规则分层极速匹配引擎"]
+        L1["1️⃣ 高频域名快表 (Top-Frequent)\nYouTube / Google / X / OpenAI / Netflix 等\n(90%+ 日常流量 20 行内极速命中，低开销)"]
+        L1 -- "未命中" --> L2["2️⃣ 核心通讯与协议集\nTelegram CIDR / Apple News / WebSocket\n(专用 IP-CIDR 段与长连接加固)"]
+        L2 -- "未命中" --> L3["3️⃣ 垂直领域分类集\nGitHub / Steam / Spotify / Notion / PyPI\n(开发者与流媒体精细分流)"]
+        L3 -- "未命中" --> L4["4️⃣ 深度 AI 矩阵 (force-remote-dns)\nClaude Artifacts / LiveKit / Cloudflare\n(全链路反欺诈与低延迟语音直通)"]
+        L4 -- "未命中" --> L5["5️⃣ GEOIP,CN,DIRECT,no-resolve\n中国大陆 IP 段直连\n(仅纯 IP 判定，跳过域名反查防污染)"]
+        L5 -- "未命中" --> L6["6️⃣ FINAL,proxy\n安全兜底层\n(未匹配流量强制送往节点远端解析)"]
     end
 
-    L1 -- 命中 --> ActionProxy["走 PROXY"]
-    L2 -- 命中 --> ActionProxy
-    L3 -- 命中 --> ActionProxy
-    L4 -- 命中 --> ActionRemoteProxy["走 PROXY (远端解析)"]
-    L5 -- 命中 --> ActionDirect["走 DIRECT"]
+    L1 -- "命中" --> ActionProxy["走 PROXY"]
+    L2 -- "命中" --> ActionProxy
+    L3 -- "命中" --> ActionProxy
+    L4 -- "命中" --> ActionRemoteProxy["走 PROXY (远端解析)"]
+    L5 -- "命中" --> ActionDirect["走 DIRECT"]
     L6 --> ActionRemoteProxy
 ```
 
